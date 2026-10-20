@@ -1,16 +1,8 @@
 import { createBrowserClient } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/src/lib/supabase/config";
 
-let browserClient: SupabaseClient | undefined;
-
-/** Shared browser client using the same cookie-based session as the server client. */
-export function createSupabaseBrowserClient(): SupabaseClient {
-  if (!browserClient) {
-    browserClient = createBrowserClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-  }
-  return browserClient;
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rcpjtkudhmfkqvmovvot.supabase.co",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjcGp0a3VkaG1ma3F2bW92dm90Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0OTg0NTcsImV4cCI6MjEwODA3NDQ1N30.efiI0ZCrHgKL6TkOgY7zgsKvr-Qfw9wrNCc_L-5LGGg"
+  );
 }
-
-// Keep the conventional Supabase utility name available for existing callers.
-export const createClient = createSupabaseBrowserClient;
