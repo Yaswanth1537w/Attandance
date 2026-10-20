@@ -29,8 +29,18 @@ export default function LoginPage() {
         password,
       });
 
-      if (authError || !authData.user) {
-        setError("The email or password you entered is incorrect. Please try again.");
+      if (authError) {
+        const authCode = "code" in authError ? authError.code : undefined;
+        if (authCode === "invalid_credentials") {
+          setError("Supabase Auth rejected these credentials. Confirm this email exists in the configured Supabase project's Authentication users and that its password is correct.");
+        } else {
+          setError(`Supabase Auth could not complete the sign-in request: ${authError.message}`);
+        }
+        return;
+      }
+
+      if (!authData.user) {
+        setError("Supabase did not return a signed-in user. Please try again.");
         return;
       }
 
