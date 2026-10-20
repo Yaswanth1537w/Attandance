@@ -151,7 +151,7 @@ create policy "students_read_own_requests" on public.event_requests for select t
 using (student_id = (select auth.uid()));
 drop policy if exists "students_insert_own_requests" on public.event_requests;
 create policy "students_insert_own_requests" on public.event_requests for insert to authenticated
-with check (student_id = (select auth.uid()) and (select public.current_app_role()) = 'student' and status = 'Draft');
+with check (student_id = (select auth.uid()) and (select public.current_app_role()) = 'student' and status in ('Draft','Submitted'));
 drop policy if exists "students_update_own_editable_requests" on public.event_requests;
 create policy "students_update_own_editable_requests" on public.event_requests for update to authenticated
 using (student_id = (select auth.uid()) and status in ('Draft','Returned for Correction'))
@@ -182,6 +182,38 @@ create policy "history_insert_self_for_own_or_assigned_request" on public.event_
 with check (actor_id = (select auth.uid()) and exists (select 1 from public.event_requests r where r.id = request_id and
   (r.student_id = (select auth.uid()) or (select public.current_app_role()) = 'incharge'
    or ((select public.current_app_role()) = 'proctor' and (select public.is_assigned_proctor(r.student_id))))));
+
+-- Private bucket for optional supporting documents uploaded from student requests.
+insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+values ('event-documents', 'event-documents', false, 10485760,
+  array['application/pdf','image/png','image/jpeg','application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "students_upload_own_event_documents" on storage.objects;
+create policy "students_upload_own_event_documents" on storage.objects for insert to authenticated
+with check (bucket_id = 'event-documents' and (select public.current_app_role()) = 'student'
+  and (storage.foldername(name))[1] = (select auth.uid())::text);
+drop policy if exists "read_own_assigned_or_incharge_event_documents" on storage.objects;
+create policy "read_own_assigned_or_incharge_event_documents" on storage.objects for select to authenticated
+using (bucket_id = 'event-documents' and (
+  (select public.current_app_role()) = 'incharge'
+  or ((select public.current_app_role()) = 'student' and (storage.foldername(name))[1] = (select auth.uid())::text)
+  or ((select public.current_app_role()) = 'proctor' and
+      case when (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        then (select public.is_assigned_proctor(((storage.foldername(name))[1])::uuid)) else false end)
+));
+drop policy if exists "students_update_own_event_documents" on storage.objects;
+create policy "students_update_own_event_documents" on storage.objects for update to authenticated
+using (bucket_id = 'event-documents' and (select public.current_app_role()) = 'student'
+  and (storage.foldername(name))[1] = (select auth.uid())::text)
+with check (bucket_id = 'event-documents' and (select public.current_app_role()) = 'student'
+  and (storage.foldername(name))[1] = (select auth.uid())::text);
+drop policy if exists "students_delete_own_event_documents" on storage.objects;
+create policy "students_delete_own_event_documents" on storage.objects for delete to authenticated
+using (bucket_id = 'event-documents' and (select public.current_app_role()) = 'student'
+  and (storage.foldername(name))[1] = (select auth.uid())::text);
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.profiles, public.attendance_records, public.system_settings,
