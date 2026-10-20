@@ -25,7 +25,7 @@ export default function LoginPage() {
     try {
       const supabase = createSupabaseBrowserClient();
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -40,16 +40,19 @@ export default function LoginPage() {
         .eq("id", authData.user.id)
         .maybeSingle();
 
-      if (profileError || !profile) {
-        await supabase.auth.signOut();
-        setError("We couldn't find a profile for this account. Please contact your administrator.");
+      if (profileError) {
+        setError("Your password was accepted, but we couldn't read your profile. Check the profiles table and its RLS SELECT policy, then try again.");
+        return;
+      }
+
+      if (!profile) {
+        setError("Your password was accepted, but no profiles row exists for this Auth user. Ask the administrator to link your profile.");
         return;
       }
 
       const dashboard = dashboardByRole[profile.role];
       if (!dashboard) {
-        await supabase.auth.signOut();
-        setError("This account has an unsupported role. Please contact your administrator.");
+        setError(`Your password was accepted, but the profile role "${profile.role}" is unsupported. Ask the administrator to set student, proctor, or incharge.`);
         return;
       }
 
