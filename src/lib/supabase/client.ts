@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 
+// Primary export expected by your app pages
 export function createSupabaseBrowserClient() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rcpjtkudhmfkqvmovvot.supabase.co",
@@ -7,5 +8,5 @@ export function createSupabaseBrowserClient() {
   );
 }
 
-// Export default alias so any existing imports don't break
+// Alias export so both import names work seamlessly
 export const createClient = createSupabaseBrowserClient;
