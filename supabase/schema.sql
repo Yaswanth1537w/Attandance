@@ -1,6 +1,5 @@
--- Technical Event Participation Approval and Attendance Monitoring Portal
--- Run once in the Supabase SQL Editor. Demo sign-in password for seeded accounts:
--- DemoPass2026!  (change/remove these accounts before production use)
+-- Technical Event Participation Approval and Attendance Monitoring Portal.
+-- Run this schema first, then supabase/seed.sql, then scripts/seed-auth-users.mjs.
 
 begin;
 
@@ -225,85 +224,8 @@ insert into public.system_settings(key, value) values
   ('attendance_stale_after_days', '30'::jsonb)
 on conflict (key) do nothing;
 
--- Seed 2 proctors, 1 in-charge, and 30 students as usable Supabase Auth demo accounts.
--- All demo accounts use DemoPass2026! and the email domain example.test.
-do $$
-declare i integer; uid uuid;
-begin
-  insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
-    raw_app_meta_data, raw_user_meta_data, created_at, updated_at, confirmation_token)
-  values
-    ('10000000-0000-4000-8000-000000000001','authenticated','authenticated','proctor1@example.test',extensions.crypt('DemoPass2026!',extensions.gen_salt('bf')),now(),'{}','{}',now(),now(),''),
-    ('10000000-0000-4000-8000-000000000002','authenticated','authenticated','proctor2@example.test',extensions.crypt('DemoPass2026!',extensions.gen_salt('bf')),now(),'{}','{}',now(),now(),''),
-    ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','incharge@example.test',extensions.crypt('DemoPass2026!',extensions.gen_salt('bf')),now(),'{}','{}',now(),now(),'')
-  on conflict (id) do nothing;
-  for i in 1..30 loop
-    uid := md5('technical-event-student-' || lpad(i::text,2,'0'))::uuid;
-    insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
-      raw_app_meta_data, raw_user_meta_data, created_at, updated_at, confirmation_token)
-    values (uid,'authenticated','authenticated','student'||lpad(i::text,2,'0')||'@example.test',
-      extensions.crypt('DemoPass2026!',extensions.gen_salt('bf')),now(),'{}','{}',now(),now(),'')
-    on conflict (id) do nothing;
-  end loop;
-end $$;
-
-insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
-select u.id::text, u.id, jsonb_build_object('sub',u.id::text,'email',u.email,'email_verified',true),
-  'email', now(), now(), now()
-from auth.users u
-where u.email like '%@example.test'
-  and not exists (select 1 from auth.identities i where i.user_id=u.id and i.provider='email');
-
-insert into public.profiles(id, roll_number, full_name, role, department) values
- ('10000000-0000-4000-8000-000000000001',null,'Aarav Proctor','proctor','Computer Science'),
- ('10000000-0000-4000-8000-000000000002',null,'Diya Proctor','proctor','Electronics'),
- ('10000000-0000-4000-8000-000000000003',null,'Technical Event In-Charge','incharge','Administration')
-on conflict (id) do nothing;
-
-insert into public.profiles(id, roll_number, full_name, role, department, year_section, proctor_id)
-select md5('technical-event-student-' || lpad(i::text,2,'0'))::uuid,
-  format('26CS%03s',i),
-  (array['Aarav','Diya','Ishaan','Ananya','Vivaan','Meera','Arjun','Saanvi','Reyansh','Aadhya'])[((i-1)%10)+1] || ' ' ||
-  (array['Sharma','Patel','Reddy','Nair','Gupta','Rao'])[((i-1)%6)+1],
-  'student', case when i <= 15 then 'Computer Science' else 'Electronics' end,
-  case when i % 2 = 0 then 'II / A' else 'III / B' end,
-  case when i <= 15 then '10000000-0000-4000-8000-000000000001'::uuid else '10000000-0000-4000-8000-000000000002'::uuid end
-from generate_series(1,30) i
-on conflict (id) do nothing;
-
--- Includes above-threshold, below-threshold, exactly-threshold, missing (zero classes), and stale data.
-insert into public.attendance_records(roll_number,student_name,department,year_section,classes_conducted,classes_attended,data_as_of)
-select p.roll_number,p.full_name,p.department,p.year_section,
-  case when n=4 then 0 else 100 end,
-  case when n=1 then 92 when n=2 then 62 when n=3 then 75 when n=4 then 0 else 70 + (n % 26) end,
-  case when n=5 then current_date - 60 else current_date - 3 end
-from (select p.*, row_number() over(order by p.roll_number)::int n from public.profiles p where p.role='student') p
-on conflict (roll_number) do nothing;
-
-insert into public.event_requests(id,reference_number,student_id,event_title,organizer_name,category,venue,start_date,end_date,url,purpose,status,proctor_remarks,incharge_remarks,override_reason)
-select md5('event-request-'||n)::uuid, 'TE-2026-'||lpad(n::text,3,'0'), md5('technical-event-student-'||lpad(n::text,2,'0'))::uuid,
-  (array['Buildathon 2026','Cloud Native Workshop','AI Research Conference','Robotics Challenge','Cybersecurity Summit','Open Source Sprint','IoT Innovation Meet','Data Science Symposium','Startup Tech Expo','Web Development Bootcamp'])[n],
-  (array['Pixel Labs','Campus Tech Forum','National Computing Society'])[ ((n-1)%3)+1 ],
-  (array['Hackathon','Workshop','Conference','Technical Competition','Other','Hackathon','Industrial Visit','Conference','Technical Competition','Workshop'])[n],
-  (array['Bengaluru','Hyderabad','Chennai','Pune'])[ ((n-1)%4)+1 ],
-  current_date + n*3, current_date + n*3 + case when n%3=0 then 1 else 0 end,
-  'https://example.test/events/'||n, 'Participate to develop practical technical skills and represent the department.',
-  (array['Draft','Submitted','Under Proctor Review','Returned for Correction','Recommended for Approval','Recommended for Rejection','Pending Final Decision','Approved','Rejected','Withdrawn'])[n]::public.event_request_status,
-  case when n in (5,6,7,8,9) then 'Reviewed by assigned proctor.' else null end,
-  case when n=8 then 'Approved for participation.' when n=9 then 'Attendance does not meet the required threshold.' else null end,
-  null
-from generate_series(1,10) n
-on conflict (id) do nothing;
-
--- Baseline history entries for the ten seeded requests.
-insert into public.event_request_history(request_id,actor_id,from_status,to_status,remarks)
-select r.id, case when r.status in ('Recommended for Approval','Recommended for Rejection','Pending Final Decision','Approved','Rejected')
-  then '10000000-0000-4000-8000-000000000001'::uuid else r.student_id end,
-  null,r.status,coalesce(r.proctor_remarks,r.incharge_remarks,'Seeded example state')
-from public.event_requests r
-where r.reference_number like 'TE-2026-%'
-  and not exists (select 1 from public.event_request_history h where h.request_id=r.id);
-
+-- Auth users are created through scripts/seed-auth-users.mjs using the Supabase Auth Admin API.
+-- Profile creation and balanced proctor assignment are installed by supabase/seed.sql.
 commit;
 
 -- Security notes:
