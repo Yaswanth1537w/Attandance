@@ -29,6 +29,25 @@ export async function updateSession(request: NextRequest) {
 
   // This validates the JWT and refreshes it when needed. Do not use
   // getSession() here; its user object is read from cookie storage only.
-  await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
+  const pathname = request.nextUrl.pathname;
+  const isProtectedPath = ["/student", "/proctor", "/incharge"].some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+
+  if (isProtectedPath && (error || !data?.claims?.sub)) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+
+    // Keep any cookies written while Supabase refreshed or cleared the session.
+    for (const cookie of response.cookies.getAll()) {
+      redirectResponse.cookies.set(cookie);
+    }
+    return redirectResponse;
+  }
+
   return response;
 }

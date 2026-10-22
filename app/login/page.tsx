@@ -30,9 +30,14 @@ export default function LoginPage() {
         password,
       });
       if (authError) {
-        setError(authError.code === "invalid_credentials"
-          ? "We couldn't match that email and password. Check your details or contact your administrator."
-          : `Sign-in failed: ${authError.message}`);
+        const authMessage = authError.message.toLowerCase();
+        if (authMessage.includes("invalid api key") || authError.code === "invalid_api_key") {
+          setError("Supabase rejected this app's public API key. Update NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel with the anon key from this Supabase project, then redeploy.");
+        } else if (authError.code === "invalid_credentials") {
+          setError("We couldn't match that email and password. Check your details or contact your administrator.");
+        } else {
+          setError(`Sign-in failed: ${authError.message}`);
+        }
         return;
       }
       if (!data.user) {
@@ -64,11 +69,27 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: {
+          // Use the origin serving this login page, so local development returns
+          // to localhost and production returns to the Vercel deployment.
+          redirectTo: new URL("/auth/callback", window.location.origin).toString(),
+          skipBrowserRedirect: true,
+        },
       });
-      if (oauthError) setError(`Google sign-in failed: ${oauthError.message}`);
+      if (oauthError) {
+        const message = oauthError.message.toLowerCase();
+        setError(message.includes("provider is not enabled") || oauthError.code === "validation_failed"
+          ? "Google sign-in is not enabled for this Supabase project yet. Ask the project admin to enable Google under Authentication → Sign In / Providers."
+          : `Google sign-in failed: ${oauthError.message}`);
+        return;
+      }
+      if (!data.url) {
+        setError("Supabase did not return a Google sign-in URL. Check the Google provider configuration and try again.");
+        return;
+      }
+      window.location.assign(data.url);
     } catch {
       setError("We couldn't start Google sign-in. Please try again.");
     } finally {

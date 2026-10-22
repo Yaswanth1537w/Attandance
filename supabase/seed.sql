@@ -76,7 +76,7 @@ begin
     inferred_roll,
     inferred_name,
     inferred_role,
-    coalesce(nullif(trim(target_metadata ->> 'department'), ''), 'Unassigned'),
+    coalesce(nullif(trim(target_metadata ->> 'department'), ''), 'AIML'),
     nullif(trim(target_metadata ->> 'year_section'), ''),
     target_proctor
   )
